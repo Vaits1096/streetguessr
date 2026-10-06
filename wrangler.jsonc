@@ -1,0 +1,22 @@
+// Despliegue en Cloudflare Workers: la web estática + server/worker.js para los pagos (/api/*).
+// Secretos (no van aquí): npx wrangler secret put STRIPE_SECRET_KEY | STRIPE_WEBHOOK_SECRET | FIREBASE_SERVICE_ACCOUNT
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "streetguessr",
+  "main": "server/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  // Modo 1vs1: cola y partidas en un Durable Object (incluido en el plan gratuito con almacenamiento SQLite)
+  "durable_objects": {
+    "bindings": [{ "name": "ARENA", "class_name": "Arena" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Arena"] }],
+  "vars": {
+    "FIREBASE_PROJECT_ID": "streetguessr-8a719"
+  },
+  "observability": { "enabled": true }
+}

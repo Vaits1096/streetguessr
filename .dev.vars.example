@@ -1,0 +1,8 @@
+# Copia este archivo como .dev.vars para `npm run dev:cf` (no se sube a git).
+# Con los emuladores de Firebase (npm run emulators) y la web abierta con ?emulador:
+FIREBASE_PROJECT_ID=demo-calles
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+# Para probar pagos, además:
+# STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_WEBHOOK_SECRET=whsec_...

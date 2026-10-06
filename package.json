@@ -1,0 +1,22 @@
+{
+  "name": "streetguessr",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "npx http-server -c-1 -p 5173 public",
+    "dev:cf": "wrangler dev --port 8787",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-calles",
+    "rules": "node tools/gen_rules.mjs",
+    "test": "node tools/gen_rules.mjs --check && firebase emulators:exec --only auth,firestore --project demo-calles \"node --test --test-concurrency=1\"",
+    "deploy:rules": "node tools/gen_rules.mjs && firebase deploy --only firestore",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0",
+    "firebase-tools": "^15.32.1",
+    "http-server": "^14.1.1",
+    "playwright": "^1.63.0",
+    "wrangler": "^4.147.0"
+  }
+}

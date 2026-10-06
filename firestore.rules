@@ -1,0 +1,359 @@
+rules_version = '2';
+
+// Modelo de datos: ver js/store.js.
+// Las partidas se guardan en una transacción que crea games/{id} y actualiza a la vez users/{uid}
+// y scores/{ciudad}_{uid}; las reglas comprueban que las tres escrituras cuadran entre sí.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function docPath(coll, id) {
+      return /databases/$(database)/documents/$(coll)/$(id);
+    }
+    function validUsername(n) {
+      return n is string && n.matches('^[A-Za-z0-9_.ÁÉÍÓÚÜÑáéíóúüñ-]{3,20}$');
+    }
+    // Avatar pixel art: "px:" + 12 piezas (11 en los avatares de antes de las mascotas),
+    // todas gratis o ya conseguidas (lista items del jugador)
+    function validAvatar(a, items) {
+      return a is string && a.matches('^px:[a-z0-9_]+([.][a-z0-9_]+){10,11}$')
+        && a.split(':')[1].split('[.]').toSet().difference(freeTokens().toSet()).difference(items.toSet()).size() == 0;
+    }
+    function validLocality(l) {
+      return l is string && l.size() <= 60;
+    }
+
+    // <catalogo> generado por tools/gen_rules.mjs a partir de public/js/catalog.js; no editar a mano
+    function freeTokens() {
+      return [
+        'skin_0',
+        'skin_1',
+        'skin_2',
+        'skin_3',
+        'skin_4',
+        'skin_5',
+        'hc_0',
+        'hc_1',
+        'hc_2',
+        'hc_3',
+        'hc_4',
+        'hc_5',
+        'hc_6',
+        'hc_7',
+        'tc_0',
+        'tc_1',
+        'tc_2',
+        'tc_3',
+        'tc_4',
+        'tc_5',
+        'tc_6',
+        'tc_7',
+        'tc_8',
+        'tc_9',
+        'face_smile',
+        'face_happy',
+        'face_wink',
+        'face_cool',
+        'hair_short',
+        'hair_long',
+        'hair_bob',
+        'hair_spiky',
+        'hair_curly',
+        'hair_bald',
+        'top_tee',
+        'top_hoodie',
+        'top_striped',
+        'bottom_jeans',
+        'bottom_shorts',
+        'bottom_skirt',
+        'shoes_sneakers',
+        'shoes_boots',
+        'hat_none',
+        'hat_cap',
+        'acc_none',
+        'acc_glasses',
+        'bg_sky',
+        'bg_mint',
+        'bg_sunset',
+        'pet_none'
+      ];
+    }
+    function coinPrices() {
+      return {
+        'face_surprised': 40,
+        'face_angry': 40,
+        'hair_ponytail': 60,
+        'hair_bun': 80,
+        'hair_afro': 100,
+        'hair_mohawk': 120,
+        'top_shirt': 80,
+        'top_jacket': 150,
+        'top_suit': 300,
+        'bottom_black': 50,
+        'bottom_track': 80,
+        'shoes_red': 40,
+        'hat_beanie': 50,
+        'hat_chef': 100,
+        'hat_headphones': 120,
+        'hat_cowboy': 150,
+        'acc_sunglasses': 60,
+        'acc_mustache': 40,
+        'acc_beard': 60,
+        'acc_scarf': 70,
+        'acc_monocle': 150,
+        'bg_spain': 100,
+        'bg_city': 120,
+        'bg_stars': 150,
+        'pet_cat': 2500,
+        'pet_dog': 3000,
+        'pet_penguin': 4000,
+        'pet_parrot': 5000
+      };
+    }
+    function achievements() {
+      return {
+        'face_star': {'stat': 'bestScore', 'min': 1000},
+        'top_jersey': {'stat': 'gamesPlayed', 'min': 10},
+        'hat_party': {'stat': 'gamesPlayed', 'min': 1},
+        'hat_crown': {'stat': 'bestScore', 'min': 2000},
+        'acc_medal': {'stat': 'totalPoints', 'min': 10000},
+        'bg_map': {'stat': 'gamesPlayed', 'min': 50},
+        'pet_hamster': {'stat': 'totalPoints', 'min': 50000}
+      };
+    }
+    // </catalogo>
+
+    // ---------- Nombres de jugador únicos ----------
+    match /usernames/{name} {
+      allow get: if true;
+      allow create: if verified()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(docPath('users', request.auth.uid)).data.username.lower() == name;
+      allow delete: if verified()
+        && resource.data.uid == request.auth.uid
+        && getAfter(docPath('users', request.auth.uid)).data.username.lower() != name;
+    }
+
+    // ---------- Perfiles ----------
+    match /users/{uid} {
+      allow read: if true;
+      allow create: if verified() && request.auth.uid == uid && newProfile(uid);
+      allow update: if verified() && request.auth.uid == uid
+        && (profileEdit(uid) || gameSaved(uid) || coinPurchase() || achievementClaim() || dailyStreak(uid));
+
+      // ---------- Amigos ----------
+      // Solicitud de "from" a "uid". Se acepta creando las dos fichas de amistad y borrando la solicitud.
+      match /requests/{from} {
+        allow read: if verified() && (request.auth.uid == uid || request.auth.uid == from);
+        allow create: if verified() && request.auth.uid == from && from != uid
+          && exists(docPath('users', uid))
+          && !exists(/databases/$(database)/documents/users/$(uid)/friends/$(from))
+          && request.resource.data.keys().hasOnly(['name', 'avatar', 'at'])
+          && request.resource.data.keys().hasAll(['name', 'avatar', 'at'])
+          && request.resource.data.name == get(docPath('users', from)).data.username
+          && request.resource.data.avatar == get(docPath('users', from)).data.avatar
+          && request.resource.data.at == request.time;
+        allow delete: if verified() && (request.auth.uid == uid || request.auth.uid == from);
+      }
+      // Amigo "other" en la lista de "uid": la escribe uid (si other le pidió amistad) o other al aceptar.
+      match /friends/{other} {
+        allow read: if verified() && request.auth.uid == uid;
+        allow create: if verified() && other != uid
+          && request.resource.data.keys().hasOnly(['since']) && request.resource.data.since == request.time
+          && ((request.auth.uid == uid && exists(/databases/$(database)/documents/users/$(uid)/requests/$(other)))
+              || (request.auth.uid == other && exists(/databases/$(database)/documents/users/$(other)/requests/$(uid))));
+        allow delete: if verified() && (request.auth.uid == uid || request.auth.uid == other);
+      }
+      // Reto de un amigo: código de una sala privada del 1 vs 1
+      match /invites/{from} {
+        allow read: if verified() && (request.auth.uid == uid || request.auth.uid == from);
+        allow create, update: if verified() && request.auth.uid == from
+          && exists(/databases/$(database)/documents/users/$(uid)/friends/$(from))
+          && request.resource.data.keys().hasOnly(['code', 'name', 'avatar', 'at'])
+          && request.resource.data.code is string && request.resource.data.code.matches('^[A-Z2-9]{5}$')
+          && request.resource.data.name == get(docPath('users', from)).data.username
+          && request.resource.data.at == request.time;
+        allow delete: if verified() && (request.auth.uid == uid || request.auth.uid == from);
+      }
+
+      match /private/{docId} {
+        allow read: if verified() && request.auth.uid == uid;
+        allow create, update: if verified() && request.auth.uid == uid && docId == 'me'
+          && request.resource.data.keys().hasOnly(['age'])
+          && (request.resource.data.age == null
+              || (request.resource.data.age is int && request.resource.data.age >= 5 && request.resource.data.age <= 120));
+      }
+    }
+
+    function newProfile(uid) {
+      let d = request.resource.data;
+      let keys = ['username', 'avatar', 'locality', 'totalPoints', 'gamesPlayed', 'bestScore', 'coins', 'items', 'lastGame', 'lastGameAt', 'createdAt'];
+      return d.keys().hasOnly(keys) && d.keys().hasAll(keys)
+        && validUsername(d.username) && validAvatar(d.avatar, []) && d.locality == ''
+        && d.totalPoints == 0 && d.gamesPlayed == 0 && d.bestScore == 0 && d.coins == 0 && d.items == [] && d.lastGame == ''
+        && d.createdAt == request.time && d.lastGameAt == request.time
+        && getAfter(docPath('usernames', d.username.lower())).data.uid == uid;
+    }
+
+    // Cambio de nombre, avatar o localidad
+    function profileEdit(uid) {
+      let d = request.resource.data;
+      return d.diff(resource.data).affectedKeys().hasOnly(['username', 'avatar', 'locality'])
+        && validUsername(d.username) && validAvatar(d.avatar, d.items) && validLocality(d.locality)
+        && getAfter(docPath('usernames', d.username.lower())).data.uid == uid;
+    }
+
+    // Totales actualizados por una partida nueva creada en la misma transacción.
+    // Además exige 1 s por ronda desde la partida anterior para frenar envíos automáticos.
+    function gameSaved(uid) {
+      let d = request.resource.data;
+      let r = resource.data;
+      let g = getAfter(docPath('games', d.lastGame)).data;
+      return d.diff(r).affectedKeys().hasOnly(['totalPoints', 'gamesPlayed', 'bestScore', 'coins', 'lastGame', 'lastGameAt'])
+        && d.lastGame is string && d.lastGame.size() > 0 && d.lastGame != r.lastGame
+        && !exists(docPath('games', d.lastGame))
+        && g.uid == uid
+        && d.totalPoints == r.totalPoints + g.score
+        && d.gamesPlayed == r.gamesPlayed + 1
+        && d.coins == r.coins + g.hits
+        && ((g.score > r.bestScore && d.bestScore == g.score) || (g.score <= r.bestScore && d.bestScore == r.bestScore))
+        && d.lastGameAt == request.time
+        && request.time >= r.lastGameAt + duration.value(g.rounds, 's');
+    }
+
+    // Un objeto nuevo añadido al final de la lista items
+    function addedItem() {
+      let d = request.resource.data;
+      let r = resource.data;
+      return d.items.size() == r.items.size() + 1
+        && (r.items.size() == 0 || d.items[0:r.items.size()] == r.items)
+        && !r.items.hasAny([d.items[r.items.size()]]);
+    }
+
+    // Comprar un objeto con monedas: se descuenta exactamente su precio
+    function coinPurchase() {
+      let d = request.resource.data;
+      let r = resource.data;
+      let item = d.items[d.items.size() - 1];
+      return d.diff(r).affectedKeys().hasOnly(['coins', 'items']) && addedItem()
+        && item in coinPrices() && d.coins == r.coins - coinPrices()[item] && d.coins >= 0;
+    }
+
+    // Reclamar un objeto de logro: la cifra del perfil (validada por las reglas de partida) llega al mínimo
+    function achievementClaim() {
+      let d = request.resource.data;
+      let r = resource.data;
+      let item = d.items[d.items.size() - 1];
+      return d.diff(r).affectedKeys().hasOnly(['items']) && addedItem()
+        && item in achievements() && r[achievements()[item].stat] >= achievements()[item].min;
+    }
+
+    // ---------- Compras con dinero real ----------
+    // Solo las escribe el servidor (functions/api/stripe-webhook.js) con la cuenta de servicio.
+    match /purchases/{id} {
+      allow read: if verified() && resource.data.uid == request.auth.uid;
+    }
+
+    // ---------- Reto diario ----------
+    // daily/{día}/results/{uid}: una partida por persona y día ({día} = días desde 1970, fecha de España).
+    match /daily/{day}/results/{uid} {
+      allow read: if true;
+      allow create: if verified() && request.auth.uid == uid && dailyResult(day, uid);
+    }
+    function dailyResult(day, uid) {
+      let d = request.resource.data;
+      let u = get(docPath('users', uid)).data;
+      let keys = ['username', 'avatar', 'score', 'hits', 'ms', 'at'];
+      return day.matches('^[0-9]{5}$') && d.keys().hasOnly(keys) && d.keys().hasAll(keys)
+        && d.username == u.username && d.avatar == u.avatar
+        && d.hits is int && d.hits >= 0 && d.hits <= 5
+        && d.score is int && d.score >= d.hits * 100 && d.score <= d.hits * 200
+        && d.ms is int && d.ms >= 0 && d.at == request.time
+        // solo ese día (con un día de margen por los husos horarios)
+        && request.time >= timestamp.value((int(day) - 1) * 86400000)
+        && request.time < timestamp.value((int(day) + 2) * 86400000);
+    }
+    // Racha: +1 si el último reto fue ayer; si no, vuelve a 1. Va en la misma escritura que el resultado.
+    function dailyStreak(uid) {
+      let d = request.resource.data;
+      let r = resource.data;
+      let last = r.get('dailyLast', -10);
+      let streak = r.get('dailyStreak', 0);
+      return d.diff(r).affectedKeys().hasOnly(['dailyLast', 'dailyStreak'])
+        && d.dailyLast is int
+        && !exists(/databases/$(database)/documents/daily/$(string(d.dailyLast))/results/$(uid))
+        && existsAfter(/databases/$(database)/documents/daily/$(string(d.dailyLast))/results/$(uid))
+        && ((last == d.dailyLast - 1 && d.dailyStreak == streak + 1) || (last != d.dailyLast - 1 && d.dailyStreak == 1));
+    }
+
+    // ---------- 1vs1 ----------
+    // Las escribe el servidor de partidas (server/arena.js). ELO y victorias en users/{uid} también:
+    // las reglas de perfil no dejan que el navegador toque elo ni comp*.
+    match /matches/{id} {
+      allow read: if verified() && request.auth.uid in resource.data.uids;
+    }
+
+    // ---------- Partidas ----------
+    match /games/{gameId} {
+      allow read: if verified() && resource.data.uid == request.auth.uid;
+      allow create: if verified() && validGame(gameId);
+    }
+
+    // 3 vidas: rondas = aciertos + 3. Cada acierto vale entre 100 y 200 puntos (ver js/game.js).
+    function validGame(gameId) {
+      let d = request.resource.data;
+      let keys = ['uid', 'cityId', 'cityName', 'score', 'hits', 'rounds', 'seconds', 'createdAt'];
+      return d.keys().hasOnly(keys) && d.keys().hasAll(keys)
+        && d.uid == request.auth.uid
+        && d.cityId is string && d.cityId.matches('^r?[0-9]{1,15}$')
+        && d.cityName is string && d.cityName.size() <= 100
+        && d.hits is int && d.hits >= 0 && d.hits <= 1000
+        && d.rounds == d.hits + 3
+        && d.score is int && d.score >= d.hits * 100 && d.score <= d.hits * 200
+        && d.seconds is int && d.seconds >= 0
+        && d.createdAt == request.time
+        && getAfter(docPath('users', request.auth.uid)).data.lastGame == gameId
+        && getAfter(docPath('scores', d.cityId + '_' + request.auth.uid)).data.lastGame == gameId;
+    }
+
+    // ---------- Ranking por ciudad ----------
+    match /scores/{scoreId} {
+      allow read: if true;
+      allow create: if verified() && ownScore(scoreId) && scoreFromGame(0, 0, 0);
+      allow update: if verified() && ownScore(scoreId)
+        && (scoreProfileEdit() || scoreFromGame(resource.data.best, resource.data.total, resource.data.games));
+    }
+
+    function ownScore(scoreId) {
+      return request.resource.data.uid == request.auth.uid
+        && scoreId == request.resource.data.cityId + '_' + request.auth.uid;
+    }
+
+    function scoreFromGame(best, total, games) {
+      let d = request.resource.data;
+      let g = getAfter(docPath('games', d.lastGame)).data;
+      let u = getAfter(docPath('users', request.auth.uid)).data;
+      let keys = ['uid', 'cityId', 'cityName', 'username', 'avatar', 'locality', 'best', 'total', 'games', 'lastGame', 'updatedAt'];
+      return d.keys().hasOnly(keys) && d.keys().hasAll(keys)
+        && d.lastGame is string && d.lastGame.size() > 0
+        && !exists(docPath('games', d.lastGame))
+        && g.uid == request.auth.uid && g.cityId == d.cityId && g.cityName == d.cityName
+        && d.total == total + g.score
+        && d.games == games + 1
+        && ((g.score > best && d.best == g.score) || (g.score <= best && d.best == best))
+        && d.username == u.username && d.avatar == u.avatar && d.locality == u.locality
+        && d.updatedAt == request.time;
+    }
+
+    // Propagar al ranking un cambio de nombre, avatar o localidad ya guardado en el perfil
+    function scoreProfileEdit() {
+      let d = request.resource.data;
+      let u = get(docPath('users', request.auth.uid)).data;
+      return d.diff(resource.data).affectedKeys().hasOnly(['username', 'avatar', 'locality'])
+        && d.username == u.username && d.avatar == u.avatar && d.locality == u.locality;
+    }
+  }
+}

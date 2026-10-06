@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1000"
+     height="220"
+     viewBox="0 0 1000 220">
+
+  <text x="20"
+        y="155"
+        font-family="Arial Rounded MT Bold, Arial, sans-serif"
+        font-size="130"
+        font-weight="900"
+        letter-spacing="-5">
+    <tspan fill="#FFFFFF">Street</tspan><tspan fill="#FFBD45">Guessr</tspan>
+  </text>
+
+</svg>

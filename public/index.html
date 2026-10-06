@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StreetGuessr</title>
+<meta name="description" content="¿Te sabes las calles de tu ciudad? Una calle se ilumina en el mapa satélite y tú pones el nombre. Más de 3.000 municipios de España.">
+<meta name="theme-color" content="#102A52">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:title" content="StreetGuessr">
+<meta property="og:description" content="¿Te sabes las calles de tu ciudad? Juega gratis en más de 3.000 municipios de España.">
+<meta property="og:image" content="assets/og-image.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;1,800&family=Nunito:wght@800;900&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/landing.css">
+<link rel="stylesheet" href="css/home.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- ---------- HUD de juego ---------- -->
+<div class="hud" id="hud" hidden>
+  <div class="card title">
+    <span id="cityName">—</span>
+    <small><button class="link" id="changeCity">← Inicio</button></small>
+  </div>
+  <div class="card vsbar" id="vsBar" hidden>
+    <div class="vs-side me"><span class="avatar sm" id="vsMeAv"></span><div><b id="vsMeName"></b><span class="dots" id="vsMeDots"></span></div></div>
+    <div class="vs-clock" id="vsClock">0:00</div>
+    <div class="vs-side opp"><div><b id="vsOppName"></b><span class="dots" id="vsOppDots"></span></div><span class="avatar sm" id="vsOppAv"></span></div>
+  </div>
+  <div class="card stats" id="soloStats">
+    <div class="stat"><b id="round">1</b><span>Ronda</span></div>
+    <div class="stat"><b id="score">0</b><span>Puntos</span></div>
+    <div class="stat"><b id="streak">0</b><span>Racha</span></div>
+    <div class="stat"><b id="lives" class="lives">♥♥♥</b><span>Vidas</span></div>
+  </div>
+</div>
+
+<button class="card userchip" id="userChip" title="Menú" hidden><span class="avatar sm" id="chipAvatar"></span></button>
+<div class="menu card" id="menu" hidden>
+  <div class="menu-head"><span class="avatar" id="menuAvatar"></span><div><b id="menuName"></b><small id="menuEmail"></small></div></div>
+  <div class="menu-coins"><i class="coin"></i> <b id="menuCoins">0</b> monedas</div>
+  <button data-go="home">Inicio</button>
+  <button data-go="avatar">Editar avatar</button>
+  <button data-go="shop">Tienda</button>
+  <button data-go="friends">Amigos <span class="pill-count" id="menuFriendsBadge" hidden></span></button>
+  <button data-go="profile">Mi perfil</button>
+  <button data-go="ranking">Ranking</button>
+  <button data-go="logout" class="danger">Cerrar sesión</button>
+</div>
+
+<div class="panel card" id="panel" hidden>
+  <div class="question"><span>Elige el nombre de la <strong>calle amarilla</strong></span>
+    <button class="ghost" id="recenter" title="Volver a encuadrar la calle (C)">Centrar calle</button></div>
+  <div class="options" id="options"></div>
+  <div class="feedback" id="feedback">
+    <span class="msg" id="msg"></span>
+    <button class="primary" id="next">Siguiente ronda →</button>
+  </div>
+</div>
+
+<!-- ---------- Portada (sin sesión) ---------- -->
+<div class="landing" id="landing" hidden>
+  <header class="lp-nav">
+    <a class="lp-logo" href="#top"><img class="brand-mark" src="assets/favicon.svg" alt=""><span class="brand-word">Street<b>Guessr</b></span></a>
+    <nav class="lp-links">
+      <a href="#modos">Modos</a>
+      <a href="#avatar">Avatar</a>
+      <a href="#amigos">Amigos</a>
+      <a href="#ciudades">Ciudades</a>
+      <a href="#ranking">Ranking</a>
+    </nav>
+    <div class="lp-nav-cta">
+      <button class="lp-btn ghost-light" data-auth="login">Iniciar sesión</button>
+      <button class="lp-btn yellow" data-auth="signup">Crear cuenta</button>
+    </div>
+  </header>
+
+  <section class="lp-hero" id="top">
+    <div class="lp-hero-text">
+      <span class="lp-kicker"><span class="dot"></span>Reto diario · Clásico · 1 vs 1 · <span id="lpKickerCities">+3.000</span> municipios</span>
+      <h1>¿Te sabes las calles de <span class="lp-city" id="lpHeroCity">tu ciudad</span>?</h1>
+      <p class="lp-lead">Una calle se ilumina sobre el mapa satélite y tu personaje la recorre. Tú pones el nombre. Juega el reto diario, conquista el ranking de tu ciudad o reta a tus amigos en un 1 vs 1.</p>
+      <div class="lp-cta">
+        <button class="lp-btn yellow big" data-auth="signup">Jugar gratis</button>
+        <button class="lp-btn white big" data-auth="google"><svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg> Entrar con Google</button>
+      </div>
+      <p class="lp-small">¿Ya tienes cuenta? <button class="link" data-auth="login">Inicia sesión</button></p>
+    </div>
+
+    <div class="lp-demo" id="lpDemo" hidden>
+      <div class="lp-demo-head"><span class="lp-badge">Pruébalo ahora</span><span class="lp-demo-city" id="lpDemoCity"></span></div>
+      <p class="lp-demo-q">¿Cómo se llama la <strong>calle amarilla</strong>?</p>
+      <div class="lp-demo-options" id="lpDemoOptions"></div>
+      <div class="lp-demo-foot">
+        <span id="lpDemoMsg"></span>
+        <button class="lp-btn small ghost-light" id="lpDemoNext">Otra calle →</button>
+      </div>
+    </div>
+
+    <a class="lp-scroll" href="#cifras" aria-label="Ver más">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </section>
+
+  <div class="lp-body">
+    <section class="lp-stats" id="cifras">
+      <div><b id="lpStatCities">3.027</b><span>municipios</span></div>
+      <div><b id="lpStatStreets">589.265</b><span>calles</span></div>
+      <div><b>52</b><span>provincias</span></div>
+      <div><b>0 €</b><span>gratis para siempre</span></div>
+    </section>
+
+    <section class="lp-section" id="modos">
+      <span class="lp-eyebrow">Modos de juego</span>
+      <h2>Tres formas de demostrar que conoces España</h2>
+      <div class="lp-modes">
+        <article class="lp-mode daily">
+          <span class="lp-mode-tag">Nuevo cada día</span>
+          <div class="lp-mode-icon">📅</div>
+          <h3>Reto diario</h3>
+          <p>5 calles famosas de 5 ciudades: la Gran Vía, La Rambla, Calle Larios, la Estafeta… Sin pistas de nombres alrededor. Las mismas para todo el mundo.</p>
+          <ul><li>Ranking del día</li><li>Racha de días seguidos 🔥</li><li>Comparte tu 🟩🟥🟩🟩🟩</li></ul>
+        </article>
+        <article class="lp-mode solo">
+          <div class="lp-mode-icon">🏙️</div>
+          <h3>Clásico</h3>
+          <p>Elige cualquier municipio y adivina sus calles una tras otra. Encadena aciertos para multiplicar los puntos. Tres fallos y se acabó.</p>
+          <ul><li>Más de 3.000 municipios</li><li>Ranking por ciudad</li><li>1 moneda por acierto</li></ul>
+        </article>
+        <article class="lp-mode versus">
+          <span class="lp-mode-tag red">En tiempo real</span>
+          <div class="lp-mode-icon">⚔️</div>
+          <h3>1 vs 1</h3>
+          <p>Las mismas 7 calles para los dos y gana quien las acierte antes. Veréis los dos personajes por el mapa: quien acierta, pasa a la siguiente.</p>
+          <ul><li>Calles de una ciudad o calles famosas</li><li>Emparejamiento por ELO</li><li>Contra la CPU si no hay nadie</li></ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="lp-section alt lp-avatar" id="avatar">
+      <div class="lp-avatar-text">
+        <span class="lp-eyebrow">Tu personaje</span>
+        <h2>Un avatar pixel art que camina por las calles</h2>
+        <p class="lp-sub">Elige piel, cara, pelo, ropa, sombrero y complementos. Gana monedas acertando calles, desbloquea objetos con logros y hazte con los exclusivos de la tienda.</p>
+        <ul class="lp-checks">
+          <li><b>Más de 70 objetos:</b> coronas, monteras, gafas pixeladas, chaquetas doradas…</li>
+          <li><b>Mascotas:</b> gato, perro, pingüino, loro, zorro y un dragón que te acompañan por el mapa.</li>
+          <li><b>Siempre contigo:</b> tu personaje recorre la calle que tienes que adivinar.</li>
+        </ul>
+      </div>
+      <div class="lp-parade" id="lpParade"></div>
+    </section>
+
+    <section class="lp-section lp-friends" id="amigos">
+      <span class="lp-eyebrow">Amigos</span>
+      <h2>Reta a tus amigos</h2>
+      <div class="lp-steps">
+        <article class="lp-step">
+          <span class="lp-step-n">1</span>
+          <div class="lp-mode-icon">👥</div>
+          <h3>Añádelos</h3>
+          <p>Búscalos por su nombre de jugador. Cuando acepten, verás su nivel, su ELO y su récord.</p>
+        </article>
+        <article class="lp-step">
+          <span class="lp-step-n">2</span>
+          <div class="lp-mode-icon">🔗</div>
+          <h3>Crea una sala</h3>
+          <p>Te damos un código y un enlace para mandar por WhatsApp. O pulsa «Retar» y le llega el aviso dentro del juego.</p>
+        </article>
+        <article class="lp-step">
+          <span class="lp-step-n">3</span>
+          <div class="lp-mode-icon">🏁</div>
+          <h3>Duelo amistoso</h3>
+          <p>En vuestra ciudad, en una al azar o con calles famosas. Las amistosas no tocan el ELO: aquí solo está en juego el orgullo.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="lp-section" id="como">
+      <span class="lp-eyebrow">Cómo se juega</span>
+      <h2>Tres pasos. Tres vidas. Miles de calles.</h2>
+      <div class="lp-steps">
+        <article class="lp-step">
+          <span class="lp-step-n">1</span>
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4c-7.7 0-14 6.1-14 13.7C10 28 24 44 24 44s14-16 14-26.3C38 10.1 31.7 4 24 4z" fill="#ffd400"/><circle cx="24" cy="18" r="5.5" fill="#111"/></svg>
+          <h3>Elige tu ciudad</h3>
+          <p>Tu pueblo, tu barrio o la ciudad que quieras conquistar. Hay más de 3.000 municipios.</p>
+        </article>
+        <article class="lp-step">
+          <span class="lp-step-n">2</span>
+          <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="4" y="8" width="40" height="32" rx="6" fill="#1d2546"/><path d="M8 32l11-11 9 6 12-10" stroke="#ffd400" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 18h10M30 34h10" stroke="#5d6a99" stroke-width="2.5" stroke-linecap="round"/></svg>
+          <h3>Mira la calle amarilla</h3>
+          <p>Verás el satélite y los nombres de las calles de alrededor. El de la amarilla, no.</p>
+        </article>
+        <article class="lp-step">
+          <span class="lp-step-n">3</span>
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 26l10 10 22-24" stroke="#2fbf71" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3>Acierta y encadena</h3>
+          <p>100 puntos por acierto y hasta 100 más por racha. Con tres fallos se acaba la partida.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="lp-section alt" id="ciudades">
+      <span class="lp-eyebrow">Ciudades</span>
+      <h2>Toda España, calle a calle</h2>
+      <p class="lp-sub">Desde Madrid hasta el pueblo de tus abuelos. Busca el tuyo:</p>
+      <input class="lp-search" id="lpCitySearch" type="search" placeholder="Busca un municipio…" autocomplete="off">
+      <div class="lp-cities" id="lpCities"></div>
+    </section>
+
+    <section class="lp-section lp-compete" id="ranking">
+      <div class="lp-compete-text">
+        <span class="lp-eyebrow">Ranking</span>
+        <h2>Demuestra quién conoce mejor su ciudad</h2>
+        <ul class="lp-checks">
+          <li><b>Reto de hoy:</b> quién ha reconocido más calles famosas, y más rápido.</li>
+          <li><b>Por ciudad:</b> tu mejor partida contra todos los que juegan en tu ciudad.</li>
+          <li><b>Mundial:</b> los puntos de todas tus partidas, juegues donde juegues.</li>
+          <li><b>1 vs 1:</b> tu ELO, que sube al ganar y baja al perder.</li>
+        </ul>
+        <button class="lp-btn yellow big" data-auth="signup">Crear mi jugador</button>
+      </div>
+      <div class="lp-board">
+        <div class="lp-board-head"><span>🏆 Top jugadores</span><small>Puntos totales</small></div>
+        <ol id="lpBoard"><li class="empty">Cargando…</li></ol>
+      </div>
+    </section>
+
+    <section class="lp-final">
+      <h2>El reto de hoy ya está esperando.</h2>
+      <p class="lp-sub">5 calles famosas. ¿Cuántas reconoces?</p>
+      <button class="lp-btn yellow big" data-auth="signup">Jugar el reto de hoy</button>
+    </section>
+
+    <footer class="lp-footer">
+      <a class="lp-logo" href="#top"><img class="brand-mark" src="assets/favicon.svg" alt=""><span class="brand-word">Street<b>Guessr</b></span></a>
+      <p>Calles © colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL) · Imágenes © Google</p>
+    </footer>
+  </div>
+</div>
+
+<!-- ---------- Inicio (con sesión) ---------- -->
+<div class="home" id="home" hidden>
+  <header class="hm-bar">
+    <span class="lp-logo"><img class="brand-mark" src="assets/favicon.svg" alt=""><span class="brand-word">Street<b>Guessr</b></span></span>
+    <div class="hm-bar-right">
+      <button class="hm-coins" id="hmCoins" title="Tienda"><i class="coin"></i> <b id="hmCoinCount">0</b><span class="plus">+</span></button>
+      <button class="lp-btn ghost-light" id="hmShop">🛒 Tienda</button>
+      <button class="lp-btn ghost-light" id="hmFriends">👥 Amigos<span class="pill-count" id="friendsBadge" hidden></span></button>
+      <button class="lp-btn ghost-light" id="hmRanking">🏆 Ranking</button>
+    </div>
+  </header>
+
+  <main class="hm-main" id="hmMain">
+    <section class="hm-player">
+      <div class="hm-stage">
+        <div class="hm-glow"></div>
+        <canvas class="hm-avatar" id="hmAvatar" width="32" height="32" aria-label="Tu avatar"></canvas>
+        <button class="hm-edit" id="hmEdit" title="Editar avatar">✏️ Editar</button>
+      </div>
+      <div class="hm-id">
+        <span class="hm-level" id="hmLevel">Nivel 1</span>
+        <h2 id="hmName">Jugador</h2>
+        <p id="hmStats"></p>
+      </div>
+    </section>
+
+    <section class="hm-play">
+      <div class="tabs hm-modes" id="hmModes">
+        <button class="tab active" data-mode="daily">📅 Reto diario</button>
+        <button class="tab" data-mode="solo">Clásico</button>
+        <button class="tab" data-mode="versus">⚔️ 1 vs 1</button>
+      </div>
+      <span class="lp-eyebrow" id="hmEyebrow">Nueva partida</span>
+      <h1 id="hmTitle">¿Dónde juegas hoy?</h1>
+      <p class="hm-league" id="hmLeague" hidden></p>
+      <div class="hm-variant" id="hmVariant" hidden>
+        <button class="active" data-variant="streets">🏙️ Calles de una ciudad<small>tú eliges dónde se juega</small></button>
+        <button data-variant="famous">⭐ Calles famosas<small>7 calles de 7 ciudades de España</small></button>
+      </div>
+      <div class="hm-daily" id="hmDaily" hidden>
+        <div class="hm-daily-stats">
+          <div><b id="hmStreak">0</b><span>🔥 días seguidos</span></div>
+          <div><b id="hmDailyCount">3</b><span>calles famosas</span></div>
+        </div>
+        <p class="hm-daily-done" id="hmDailyDone" hidden></p>
+        <button class="lp-btn yellow huge" id="hmDailyPlay">Jugar el reto de hoy</button>
+        <button class="link" id="hmDailyRank">Ver el ranking de hoy</button>
+      </div>
+      <div class="hm-picked" id="hmPicked" hidden>
+        <span class="hm-pin">📍</span>
+        <div><b id="hmPickedName"></b><small id="hmPickedInfo"></small></div>
+        <button class="link" id="hmPickedChange">Cambiar</button>
+      </div>
+      <div class="hm-search" id="hmSearchBox">
+        <input class="lp-search" id="hmCitySearch" type="search" placeholder="Busca un municipio…" autocomplete="off">
+        <div class="row chips" id="hmQuick"></div>
+        <ul class="list cities hm-results" id="hmCityList"></ul>
+      </div>
+      <button class="lp-btn yellow huge" id="hmPlay" disabled>Elige una ubicación</button>
+      <div class="hm-vs" id="hmVsButtons" hidden>
+        <button class="lp-btn ghost-light" id="hmVsRandom">🎲 Rival aleatorio <small>cualquier ciudad</small></button>
+        <button class="lp-btn ghost-light" id="hmVsCpu">🤖 Contra la CPU</button>
+        <button class="lp-btn ghost-light" id="hmVsRoom">👥 Sala con un amigo <small>te damos un enlace</small></button>
+        <form class="hm-join" id="hmJoin"><input id="hmJoinCode" maxlength="5" placeholder="Código" autocomplete="off" aria-label="Código de sala"><button class="lp-btn ghost-light">Unirse</button></form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ---------- Pantallas ---------- -->
+<section class="overlay" id="screen-loading">
+  <div class="card modal"><div class="spinner"></div><p>Cargando…</p></div>
+</section>
+
+<section class="overlay hidden" id="screen-setup">
+  <div class="card modal">
+    <h1>Falta configurar Firebase</h1>
+    <p>Rellena <code>js/config.js</code> con la configuración de tu proyecto de Firebase. Los pasos están en el README.</p>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-login">
+  <div class="card modal auth-modal">
+    <button class="close" id="authClose" aria-label="Cerrar">×</button>
+    <h1 id="authTitle">Entra a jugar</h1>
+    <p id="authContext">Guarda tus partidas y compite en el ranking de tu ciudad.</p>
+    <button class="google" id="googleBtn">
+      <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+      Continuar con Google
+    </button>
+    <p class="hint emu" id="emuGoogleHint" hidden>Modo emulador: Google abre una cuenta de prueba. En la ventana pulsa
+      «Add new account» → «Auto-generate user information» → «Sign in with Google.com».</p>
+    <div class="sep"><span>o con tu correo</span></div>
+    <div class="tabs" id="authTabs">
+      <button class="tab active" data-mode="login">Entrar</button>
+      <button class="tab" data-mode="signup">Crear cuenta</button>
+    </div>
+    <form id="emailForm" class="form" novalidate>
+      <label>Correo<input type="email" id="email" autocomplete="email" required></label>
+      <label>Contraseña<input type="password" id="password" autocomplete="current-password" minlength="6" required></label>
+      <label id="password2Row" hidden>Repite la contraseña<input type="password" id="password2" autocomplete="new-password"></label>
+      <p class="error" id="authError" hidden></p>
+      <button class="primary wide" type="submit" id="emailSubmit">Entrar</button>
+      <button class="link" type="button" id="forgot">¿Has olvidado la contraseña?</button>
+    </form>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-verify">
+  <div class="card modal">
+    <h1>Verifica tu correo</h1>
+    <p>Te hemos enviado un enlace a <strong id="verifyEmail"></strong>. Ábrelo para activar tu cuenta y vuelve aquí; esta pantalla avanzará sola.</p>
+    <p class="error" id="verifyError" hidden></p>
+    <div class="row">
+      <button class="primary" id="verifyCheck">Ya lo he verificado</button>
+      <button class="ghost" id="verifyResend">Reenviar correo</button>
+    </div>
+    <div class="row emu" id="verifyEmuRow" hidden>
+      <p class="hint">Modo emulador: no se envían correos de verdad.</p>
+      <button class="primary" id="verifyEmu">Verificar ahora (emulador)</button>
+    </div>
+    <button class="link" id="verifyLogout">Usar otra cuenta</button>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-username">
+  <div class="card modal">
+    <h1>Elige tu nombre de jugador</h1>
+    <p>Es el nombre que verán los demás en el ranking. Podrás cambiarlo más tarde en tu perfil.</p>
+    <form id="usernameForm" class="form" novalidate>
+      <label>Nombre de jugador<input id="usernameInput" maxlength="20" autocomplete="nickname" required></label>
+      <p class="hint">De 3 a 20 caracteres: letras, números, «_», «.» o «-».</p>
+      <p class="error" id="usernameError" hidden></p>
+      <button class="primary wide" type="submit">Crear jugador</button>
+    </form>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-over">
+  <div class="card modal">
+    <h1>Fin de la partida</h1>
+    <div class="big" id="finalScore">0</div>
+    <p id="finalInfo"></p>
+    <p class="over-coins" id="finalCoins" hidden></p>
+    <p class="sub" id="finalRank"></p>
+    <div class="over-unlocks" id="finalUnlocks" hidden></div>
+    <div class="row">
+      <button class="primary" id="again">Jugar otra vez</button>
+      <button class="ghost" id="overRanking">Ranking</button>
+      <button class="ghost" id="overHome">Inicio</button>
+    </div>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-profile">
+  <div class="card modal wide-modal">
+    <button class="close" data-close aria-label="Cerrar">×</button>
+    <h1>Mi perfil</h1>
+    <div class="profile-top">
+      <div class="prof-av"><canvas class="pixel" id="profAvatar" width="32" height="32"></canvas>
+        <button class="ghost" id="profEditAvatar">Editar avatar</button></div>
+      <div class="profile-stats">
+        <div class="stat"><b id="profGames">0</b><span>Partidas</span></div>
+        <div class="stat"><b id="profTotal">0</b><span>Puntos</span></div>
+        <div class="stat"><b id="profBest">0</b><span>Récord</span></div>
+        <div class="stat"><b id="profCoins">0</b><span>Monedas</span></div>
+        <div class="stat"><b id="profElo">1000</b><span>ELO 1vs1</span></div>
+        <div class="stat"><b id="profVs">0-0</b><span>Vict.-Derr.</span></div>
+      </div>
+    </div>
+    <form id="profileForm" class="form">
+      <label>Nombre de jugador<input id="profName" maxlength="20" required></label>
+      <div class="row2">
+        <label>Edad<input id="profAge" type="number" min="5" max="120" inputmode="numeric" placeholder="—"></label>
+        <label class="grow">Localidad<input id="profLocality" list="localityList" maxlength="60" placeholder="Tu municipio" autocomplete="off"></label>
+      </div>
+      <datalist id="localityList"></datalist>
+      <p class="hint">La edad solo la ves tú. El nombre, el avatar y la localidad salen en el ranking.</p>
+      <p class="error" id="profileError" hidden></p>
+      <p class="ok" id="profileOk" hidden>Perfil guardado</p>
+      <button class="primary wide" type="submit">Guardar cambios</button>
+    </form>
+    <h2>Mis ciudades</h2>
+    <ul class="list" id="myCities"><li class="empty">Aún no has jugado ninguna partida.</li></ul>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-ranking">
+  <div class="card modal wide-modal">
+    <button class="close" data-close aria-label="Cerrar">×</button>
+    <h1>Ranking</h1>
+    <div class="tabs" id="rankTabs">
+      <button class="tab" data-tab="daily">Reto de hoy</button>
+      <button class="tab active" data-tab="city">Por ciudad</button>
+      <button class="tab" data-tab="world">Mundial</button>
+      <button class="tab" data-tab="versus">1 vs 1</button>
+    </div>
+    <div id="rankCityPicker" class="row">
+      <input class="search" id="rankCitySearch" type="search" placeholder="Busca otra ciudad…" autocomplete="off">
+    </div>
+    <ul class="list" id="rankCitySuggest" hidden></ul>
+    <p class="sub" id="rankTitle"></p>
+    <ol class="list ranking" id="rankList"></ol>
+    <p class="sub" id="rankMine"></p>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-search">
+  <div class="card modal search-modal">
+    <div class="radar"><span></span><span></span><span></span><i class="avatar" id="searchAv"></i></div>
+    <h1>Buscando rival</h1>
+    <p id="searchWhere"></p>
+    <div class="search-info"><b id="searchTime">0:00</b><span id="searchOnline"></span><span id="searchRange"></span></div>
+    <p class="error" id="searchError" hidden></p>
+    <button class="ghost" id="searchCancel">Cancelar</button>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-room">
+  <div class="card modal room-modal">
+    <span class="lp-eyebrow">Sala privada · amistosa, no cuenta para el ELO</span>
+    <h1>Invita a un amigo</h1>
+    <p id="roomWhere"></p>
+    <div class="room-code" id="roomCode">·····</div>
+    <input class="room-link" id="roomLink" readonly aria-label="Enlace de la sala">
+    <div class="row">
+      <button class="primary" id="roomShare">Compartir enlace</button>
+      <button class="ghost" id="roomCopy">Copiar</button>
+    </div>
+    <p class="sub" id="roomStatus">Esperando a tu amigo… La partida empieza en cuanto entre.</p>
+    <p class="error" id="roomError" hidden></p>
+    <button class="link" id="roomCancel">Cancelar</button>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-friends">
+  <div class="card modal wide-modal friends-modal">
+    <button class="close" data-close aria-label="Cerrar">×</button>
+    <h1>Amigos</h1>
+    <form class="friend-add" id="friendAdd">
+      <input id="friendName" placeholder="Nombre de jugador de tu amigo" maxlength="20" autocomplete="off">
+      <button class="primary">Añadir</button>
+    </form>
+    <p class="error" id="friendError" hidden></p>
+    <p class="ok" id="friendOk" hidden></p>
+    <div id="friendInvitesBox" hidden><h2>Te retan</h2><ul class="list friend-list" id="friendInvites"></ul></div>
+    <div id="friendRequestsBox" hidden><h2>Solicitudes</h2><ul class="list friend-list" id="friendRequests"></ul></div>
+    <h2>Mis amigos</h2>
+    <ul class="list friend-list" id="friendList"><li class="empty">Aún no tienes amigos en StreetGuessr. ¡Añade a alguien por su nombre de jugador!</li></ul>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-dailyover">
+  <div class="card modal">
+    <span class="lp-eyebrow" id="dailyOverDate"></span>
+    <h1>Reto completado</h1>
+    <div class="big" id="dailyScore">0</div>
+    <div class="daily-squares" id="dailySquares"></div>
+    <ul class="daily-recap" id="dailyRecap"></ul>
+    <p class="sub" id="dailyInfo"></p>
+    <div class="row">
+      <button class="primary" id="dailyShare">Compartir resultado</button>
+      <button class="ghost" id="dailyRanking">Ranking de hoy</button>
+      <button class="ghost" id="dailyHome">Inicio</button>
+    </div>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-vsintro">
+  <div class="vs-intro">
+    <div class="vs-player me"><canvas class="pixel" id="vsIntroMe" width="48" height="48"></canvas><b id="vsIntroMeName"></b><small id="vsIntroMeElo"></small></div>
+    <div class="vs-center"><span class="vs-word">VS</span><b class="vs-count" id="vsCount">3</b><small id="vsIntroCity"></small></div>
+    <div class="vs-player opp"><canvas class="pixel" id="vsIntroOpp" width="48" height="48"></canvas><b id="vsIntroOppName"></b><small id="vsIntroOppElo"></small></div>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-vsover">
+  <div class="card modal vsover-modal">
+    <h1 id="vsResult">¡Victoria!</h1>
+    <p class="sub" id="vsReason"></p>
+    <div class="vs-final">
+      <div class="vs-final-p" id="vsFinalMe"></div>
+      <div class="vs-final-p" id="vsFinalOpp"></div>
+    </div>
+    <p class="vs-elo" id="vsElo"></p>
+    <div class="row">
+      <button class="primary" id="vsAgain">Otra partida</button>
+      <button class="ghost" id="vsHome">Inicio</button>
+    </div>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-avatar">
+  <div class="card modal av-modal">
+    <button class="close" data-close aria-label="Cerrar">×</button>
+    <div class="av-layout">
+      <div class="av-preview">
+        <canvas class="pixel av-canvas" id="avCanvas" width="32" height="32"></canvas>
+        <div class="av-coins"><i class="coin"></i> <b id="avCoins">0</b></div>
+        <div class="av-action" id="avAction" hidden></div>
+        <button class="primary wide" id="avSave">Guardar avatar</button>
+        <button class="link" id="avReset">Deshacer cambios</button>
+        <p class="error" id="avError" hidden></p>
+      </div>
+      <div class="av-pick">
+        <h1>Tu avatar</h1>
+        <div class="av-tabs" id="avTabs"></div>
+        <div class="av-swatches" id="avSwatches"></div>
+        <div class="av-grid" id="avGrid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="overlay hidden" id="screen-shop">
+  <div class="card modal shop-modal">
+    <button class="close" data-close aria-label="Cerrar">×</button>
+    <div class="shop-head">
+      <h1>Tienda</h1>
+      <div class="av-coins"><i class="coin"></i> <b id="shopCoins">0</b></div>
+    </div>
+    <p class="sub">Gana 1 moneda por cada calle que aciertes, o consigue más y objetos exclusivos aquí. Pago seguro con Stripe.</p>
+    <h2>Monedas</h2>
+    <div class="shop-grid packs" id="shopPacks"></div>
+    <h2>🐾 Mascotas</h2>
+    <p class="sub">Te acompañan en el avatar y por cada calle que recorres.</p>
+    <div class="shop-grid" id="shopPets"></div>
+    <h2>Exclusivos</h2>
+    <div class="shop-grid" id="shopPremium"></div>
+    <h2>Con monedas</h2>
+    <div class="shop-grid" id="shopCoinItems"></div>
+    <h2>Logros</h2>
+    <div class="shop-grid" id="shopAch"></div>
+    <p class="error" id="shopError" hidden></p>
+  </div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
